@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SG71 UID AUTH • Admin</title>
+  <link href="https://unpkg.com/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Exo:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-database-compat.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Exo:wght@400;500;600&display=swap');
+
+    body {
+      background:
+        radial-gradient(1200px 800px at 50% -10%, rgba(176, 40, 40, 0.3) 0%, rgba(176, 40, 40, 0) 50%),
+        radial-gradient(1000px 700px at 50% 20%, rgba(255, 82, 82, 0.2) 0%, rgba(255, 82, 82, 0) 50%),
+        linear-gradient(135deg, #b71c1c 0%, #8b0000 25%, #121212 50%, #000000 75%);
+      min-height: 100vh;
+      color: #ffffff;
+      font-family: 'Exo', sans-serif;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        radial-gradient(circle at 25% 25%, rgba(255, 82, 82, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 75% 75%, rgba(183, 28, 28, 0.05) 0%, transparent 50%),
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 82, 82, 0.03) 2px, rgba(255, 82, 82, 0.03) 4px);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    h1, h2, h3 {
+      font-family: 'Orbitron', monospace;
+    }
+
+    .glass {
+      background: rgba(18,18,18,.75);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 82, 82,.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+    }
+
+    .glow {
+      box-shadow: 0 10px 30px rgba(255,82,82,.2), inset 0 0 0 1px rgba(255,82,82,.1);
+      transition: all 0.3s ease;
+    }
+
+    .glow:hover {
+      box-shadow: 0 10px 40px rgba(255,82,82,.4), inset 0 0 0 1px rgba(255,82,82,.2);
+      transform: scale(1.02);
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #ff5252, #b71c1c);
+      color: #ffffff;
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      border: none;
+      transition: all 0.3s ease;
+      font-family: 'Exo', sans-serif;
+    }
+
+    .btn:hover {
+      background: linear-gradient(135deg, #ff7f7f, #d32f2f);
+      box-shadow: 0 0 20px rgba(255, 82, 82, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .btn:active {
+      transform: translateY(0px);
+    }
+
+    .input {
+      background: rgba(18,18,18,.8);
+      color: #ffffff;
+      border: 1px solid rgba(255,82,82,.25);
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+      transition: all 0.3s ease;
+    }
+
+    .input:focus {
+      outline: none;
+      border-color: rgba(255,82,82,.7);
+      box-shadow: 0 0 0 4px rgba(255,82,82,.15);
+    }
+
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,82,82,.25), transparent);
+    }
+
+    .pill {
+      border: 1px solid rgba(255,82,82,.25);
+      background: rgba(18,18,18,.6);
+    }
+
+    .countdown-pulse {
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .6; }
+    }
+
+    .hex-grid::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        radial-gradient(circle at 1px 1px, rgba(255,82,82,0.15) 1px, transparent 0);
+      background-size: 30px 30px;
+      opacity: 0.2;
+      pointer-events: none;
+    }
+
+    .neural-network {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(ellipse at center, rgba(255,82,82,0.05) 0%, transparent 70%),
+        radial-gradient(ellipse at 20% 20%, rgba(183,28,28,0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 60%, rgba(183,28,28,0.02) 0%, transparent 50%);
+      animation: neuralPulse 4s ease-in-out infinite;
+    }
+
+    @keyframes neuralPulse {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 0.5; }
+    }
+
+    .table-wrap {
+      overflow: auto;
+    }
+
+    @media (max-width: 768px) {
+      body::before {
+        background-size: 20px 20px;
+      }
+    }
+  </style>
+</head>
+<body class="antialiased selection:bg-red-500/30 selection:text-white" style="background-attachment: fixed;">
+
+  <div class="max-w-6xl mx-auto px-6 py-12 hex-grid">
+    <!-- Header -->
+    <header class="flex items-center justify-between mb-10">
+      <div class="flex items-center gap-3">
+        <div class=" text-white font-bold text-lg shadow-lg glow">
+       
+            <path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2H4zm2 6a2 2 0 114 0 2 2 0 01-4 0zm8-2a1 1 0 100-2 1 1 0 000 2zm-3 1a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-red-400">UID Management System</h1>
+          <p class="text-red-300 text-sm">User Management System</p>
+        </div>
+      </div>
+      <div id="headerStatus" class="md:flex items-center gap-2 badge text-xs px-3 py-1.5 rounded-full text-white bg-gradient-to-r from-red-700 to-red-500 border border-red-400/50">
+        <span>Admin Mode</span>
+      </div>
+    </header>
+
+    <!-- Admin Dashboard -->
+    <section id="adminDashboard" class="glass glow rounded-2xl p-6 lg:p-8">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-lg font-bold text-red-400">Admin Dashboard</h2>
+          <p class="text-red-200 text-sm">Manage user accounts and UID data.</p>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <!-- Add User -->
+        <div class="rounded-2xl border border-red-800/50 bg-black/40 p-5 glow">
+          <h3 class="font-bold mb-4 text-red-400">Create User</h3>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm text-red-300 mb-1.5">Username</label>
+              <input id="newUsername" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" placeholder="e.g., tenzo">
+            </div>
+            <div>
+              <label class="block text-sm text-red-300 mb-1.5">Password</label>
+              <input id="newPassword" type="password" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" placeholder="e.g., password123">
+            </div>
+            <div class="flex items-center gap-3">
+              <button id="addUserBtn" class="btn bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-semibold px-4 py-2.5 rounded-xl">Add Users</button>
+              <span id="userAdded" class="text-xs text-red-400 hidden">Neuron Added!</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- User List -->
+        <div class="rounded-2xl border border-red-800/50 bg-black/40 p-5 glow">
+          <h3 class="font-bold mb-4 text-red-400">User List!</h3>
+          <div class="table-wrap rounded-xl border border-red-800/50 mb-4">
+            <table class="min-w-full text-sm">
+              <thead class="bg-red-900/40 text-red-200 sticky top-0">
+                <tr>
+                  <th class="text-left py-3 px-4">Username</th>
+                  <th class="text-left py-3 px-4">Display Name</th>
+                  <th class="text-left py-3 px-4">UID Count</th>
+                  <th class="text-left py-3 px-4">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="userTbody" class="divide-y divide-red-800/60"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <footer class="mt-12 text-center text-red-500 text-sm">
+      Admin Panel For managing user accounts.
+    </footer>
+  </div>
+
+  <script type="module">
+    // Firebase Configuration
+    const firebaseConfig = {
+      apiKey: "",
+      authDomain: "",
+      databaseURL: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    };
+
+    // Initialize Firebase
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // Elements
+    const newUsername = document.getElementById('newUsername');
+    const newPassword = document.getElementById('newPassword');
+    const addUserBtn = document.getElementById('addUserBtn');
+    const userAdded = document.getElementById('userAdded');
+    const userTbody = document.getElementById('userTbody');
+
+    // Utils
+    function show(el) { el.classList.remove('hidden'); }
+    function hide(el) { el.classList.add('hidden'); }
+
+    // Password hashing function (SHA-256)
+    async function hashPassword(password) {
+      const msgBuffer = new TextEncoder().encode(password);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    // Check if username exists
+    async function usernameExists(username) {
+      try {
+        const usersRef = db.ref('users');
+        const snapshot = await usersRef.once('value');
+        if (!snapshot.exists()) return false;
+
+        const usersData = snapshot.val();
+        return Object.values(usersData).some(user => user.username.toLowerCase() === username.toLowerCase());
+      } catch (error) {
+        console.error('Error checking username:', error);
+        return false;
+      }
+    }
+
+    // Render User List
+    async function renderUserList() {
+      try {
+        userTbody.innerHTML = '';
+        const usersRef = db.ref('users');
+        const snapshot = await usersRef.once('value');
+
+        if (!snapshot.exists()) {
+          userTbody.innerHTML = '<tr><td colspan="4" class="py-3 px-4 text-slate-400">No users found</td></tr>';
+          return;
+        }
+
+        const usersData = snapshot.val();
+        for (const [userId, user] of Object.entries(usersData)) {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-slate-800/30';
+          tr.setAttribute('data-id', userId);
+          const uidCount = Array.isArray(user.uids) ? user.uids.length : 0;
+
+          tr.innerHTML = `
+            <td class="py-3 px-4 font-medium text-slate-100">${user.username}</td>
+            <td class="py-3 px-4 text-slate-300">${user.displayName || 'N/A'}</td>
+            <td class="py-3 px-4 text-slate-300">${uidCount}</td>
+            <td class="py-3 px-4">
+              <button class="removeUserBtn btn bg-rose-500/90 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg text-xs">Remove</button>
+            </td>
+          `;
+          userTbody.appendChild(tr);
+        }
+      } catch (error) {
+        console.error('Error rendering user list:', error);
+        userTbody.innerHTML = '<tr><td colspan="4" class="py-3 px-4 text-rose-400">Error loading users</td></tr>';
+      }
+    }
+
+    // Add User
+    addUserBtn.addEventListener('click', async () => {
+      const username = newUsername.value.trim();
+      const password = newPassword.value.trim();
+      
+      if (!username || !password) {
+        userAdded.textContent = 'Please enter both username and password';
+        userAdded.classList.remove('hidden');
+        userAdded.classList.add('text-rose-400');
+        setTimeout(() => {
+          userAdded.classList.add('hidden');
+          userAdded.classList.remove('text-rose-400');
+          userAdded.textContent = 'User Added!';
+        }, 2000);
+        return;
+      }
+
+    
+
+      try {
+        // Check if username already exists
+        const exists = await usernameExists(username);
+        if (exists) {
+          userAdded.textContent = 'Username already exists';
+          userAdded.classList.remove('hidden');
+          userAdded.classList.add('text-rose-400');
+          setTimeout(() => {
+            userAdded.classList.add('hidden');
+            userAdded.classList.remove('text-rose-400');
+            userAdded.textContent = 'User Added!';
+          }, 2000);
+          return;
+        }
+
+        // Hash the password
+        const hashedPassword = await hashPassword(password);
+
+        // Add new user
+        const newUserRef = db.ref('users').push();
+        const userData = {
+          username: username,
+          password: hashedPassword,
+          displayName: '',
+          uids: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+
+        await newUserRef.set(userData);
+
+        newUsername.value = '';
+        newPassword.value = '';
+        userAdded.classList.remove('hidden', 'text-rose-400');
+        userAdded.classList.add('text-emerald-400');
+        setTimeout(() => userAdded.classList.add('hidden'), 2000);
+        renderUserList();
+      } catch (error) {
+        console.error('Error adding user:', error);
+        userAdded.textContent = 'Error adding user: ' + error.message;
+        userAdded.classList.remove('hidden');
+        userAdded.classList.add('text-rose-400');
+        setTimeout(() => {
+          userAdded.classList.add('hidden');
+          userAdded.classList.remove('text-rose-400');
+          userAdded.textContent = 'User Added!';
+        }, 2000);
+      }
+    });
+
+    // Remove User
+    userTbody.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('removeUserBtn')) {
+        const tr = e.target.closest('tr');
+        const userId = tr.getAttribute('data-id');
+        const username = tr.querySelector('td:first-child').textContent;
+        
+        if (confirm(`Remove user "${username}" and all their UIDs? This action cannot be undone.`)) {
+          try {
+            const userRef = db.ref(`users/${userId}`);
+            await userRef.remove();
+            renderUserList();
+          } catch (error) {
+            console.error('Error removing user:', error);
+            userAdded.textContent = 'Error removing user: ' + error.message;
+            userAdded.classList.remove('hidden');
+            userAdded.classList.add('text-rose-400');
+            setTimeout(() => {
+              userAdded.classList.add('hidden');
+              userAdded.classList.remove('text-rose-400');
+              userAdded.textContent = 'User Added!';
+            }, 2000);
+          }
+        }
+      }
+    });
+
+    // Initialize
+    renderUserList();
+  </script>
+</body>
+</html>

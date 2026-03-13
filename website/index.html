@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UID Auth List</title>
+  <link href="https://unpkg.com/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Exo:wght@400;500;600&display=swap" rel="stylesheet">
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
+    import { getDatabase, ref, set, get, query, orderByChild, equalTo, update, remove } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-database.js';
+    window.firebase = { initializeApp, getDatabase, ref, set, get, query, orderByChild, equalTo, update, remove };
+    //put info here
+    document.addEventListener('DOMContentLoaded', () => {
+      const firebaseConfig = {
+        apiKey: "",
+        authDomain: "",
+        databaseURL: "",
+        projectId: "",
+        storageBucket: "",
+        messagingSenderId: "",
+        appId: ""
+      };
+      const app = firebase.initializeApp(firebaseConfig);
+      const db = firebase.getDatabase(app);
+
+      const loginPanel = document.getElementById('loginPanel');
+      const dashboardPanel = document.getElementById('dashboardPanel');
+      const headerStatus = document.getElementById('headerStatus');
+      const signedBadge = document.getElementById('signedBadge');
+      const sampleUsername = document.getElementById('sampleUsername');
+      const samplePassword = document.getElementById('samplePassword');
+      const demoEnterBtn = document.getElementById('demoEnterBtn');
+      const loginHint = document.getElementById('loginHint');
+      const signOutBtn = document.getElementById('signOutBtn');
+      const displayName = document.getElementById('displayName');
+      const secretField = document.getElementById('secretField');
+      const freemodeToggle = document.getElementById('freemodeToggle');
+      const saveProfileBtn = document.getElementById('saveProfileBtn');
+      const profileSaved = document.getElementById('profileSaved');
+      const uidField = document.getElementById('uidField');
+      const uidDisplayName = document.getElementById('uidDisplayName');
+      const expiryPeriod = document.getElementById('expiryPeriod');
+      const expiryCount = document.getElementById('expiryCount');
+      const addUidBtn = document.getElementById('addUidBtn');
+      const uidTbody = document.getElementById('uidTbody');
+      const statTotal = document.getElementById('statTotal');
+      const statActive = document.getElementById('statActive');
+      const statExpired = document.getElementById('statExpired');
+      const filterBtns = Array.from(document.querySelectorAll('.filterBtn'));
+      const searchInput = document.getElementById('searchInput');
+
+      if (!loginPanel || !dashboardPanel || !headerStatus || !signedBadge ||
+          !sampleUsername || !samplePassword || !demoEnterBtn || !loginHint ||
+          !signOutBtn || !displayName || !secretField || !freemodeToggle || !saveProfileBtn || !profileSaved ||
+          !uidField || !uidDisplayName || !expiryPeriod || !expiryCount ||
+          !addUidBtn || !uidTbody || !statTotal || !statActive || !statExpired ||
+          !searchInput) {
+        console.error('One or more DOM elements are missing');
+        return;
+      }
+
+      let currentFilter = 'all';
+      let tickTimer = null;
+      let currentUserId = null;
+      let currentUsername = '';
+      let uidList = [];
+      let freemode = false;
+      let secret = '';
+
+      async function hashPassword(password) {
+        const msgBuffer = new TextEncoder().encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        return Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+      }
+
+      function show(el) { el.classList.remove('hidden'); }
+      function hide(el) { el.classList.add('hidden'); }
+      function uidValid(v) { return /^\d{5,}$/.test(v); }
+      function fmtDate(ts) {
+        if (!ts) return 'Lifetime';
+        const d = new Date(ts);
+        return d.toLocaleString();
+      }
+      function fmtLeft(ts) {
+        if (!ts) return 'Lifetime';
+        const diff = ts - Date.now();
+        if (diff <= 0) return 'Expired';
+        const s = Math.floor(diff / 1000);
+        const m = Math.floor(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+        const parts = [];
+        if (d) parts.push(d + 'd');
+        if (h % 24 || d) parts.push((h % 24) + 'h');
+        if (m % 60 || h || d) parts.push((m % 60) + 'm');
+        parts.push((s % 60) + 's');
+        return parts.join(' ');
+      }
+      function isExpired(ts) { return ts && ts <= Date.now(); }
+      function updateHeaderStatus(text, color = 'text-slate-100') {
+        headerStatus.querySelector('span').textContent = text;
+        headerStatus.className = 'md:flex items-center gap-2 badge text-xs px-3 py-1.5 rounded-full ' + color;
+      }
+      function makeId() { return 'k_' + Math.random().toString(36).slice(2, 9); }
+      function setFilter(f) {
+        currentFilter = f;
+        renderTable();
+        filterBtns.forEach(b => {
+          const active = b.dataset.filter === f;
+          b.classList.toggle('bg-cyan-500', active);
+          b.classList.toggle('hover:bg-cyan-400', active);
+          b.classList.toggle('text-slate-900', active);
+          b.classList.toggle('bg-slate-700/60', !active);
+          b.classList.toggle('hover:bg-slate-700', !active);
+          b.classList.toggle('text-slate-100', !active);
+        });
+      }
+      function stats() {
+        const total = uidList.length;
+        const active = uidList.filter(e => e.active && !isExpired(e.expiryTs)).length;
+        const expired = uidList.filter(e => isExpired(e.expiryTs)).length;
+        statTotal.textContent = total;
+        statActive.textContent = active;
+        statExpired.textContent = expired;
+      }
+      function renderTable() {
+        uidTbody.innerHTML = '';
+        let view = uidList.slice();
+        const searchTerm = searchInput.value.trim().toLowerCase();
+        if (searchTerm) {
+          view = view.filter(e => e.displayName?.toLowerCase().includes(searchTerm));
+        }
+        if (currentFilter === 'active') {
+          view = view.filter(e => e.active && !isExpired(e.expiryTs));
+        } else if (currentFilter === 'expired') {
+          view = view.filter(e => isExpired(e.expiryTs));
+        } else if (currentFilter === 'inactive') {
+          view = view.filter(e => !e.active && !isExpired(e.expiryTs));
+        }
+        view.forEach(entry => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-slate-800/30';
+          tr.setAttribute('data-id', entry.id);
+          const statusText = isExpired(entry.expiryTs) ? 'Expired' : (entry.active ? 'Active' : 'Inactive');
+          const statusColor = isExpired(entry.expiryTs) ? 'text-rose-300' : (entry.active ? 'text-emerald-300' : 'text-slate-300');
+          tr.innerHTML = `
+            <td class="py-3 px-4 font-medium text-slate-100">${entry.uid}</td>
+            <td class="py-3 px-4 text-slate-300">${entry.displayName || 'N/A'}</td>
+            <td class="py-3 px-4 text-slate-300">${fmtDate(entry.expiryTs)}</td>
+            <td class="py-3 px-4 ${!isExpired(entry.expiryTs) ? 'text-cyan-300 countdown-pulse' : 'text-slate-400'}">${fmtLeft(entry.expiryTs)}</td>
+            <td class="py-3 px-4 ${statusColor}">${statusText}</td>
+            <td class="py-3 px-4">
+              <div class="flex items-center gap-2">
+                <button class="rowToggle btn ${entry.active ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-900' : 'bg-slate-700/60 hover:bg-slate-700 text-slate-100'} px-3 py-1.5 rounded-lg text-xs">${entry.active ? 'Deactivate' : 'Activate'}</button>
+                <button class="rowEdit btn bg-indigo-500 hover:bg-indigo-400 text-white px-3 py-1.5 rounded-lg text-xs">Edit</button>
+                <button class="rowRemove btn bg-rose-500/90 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg text-xs">Remove</button>
+              </div>
+            </td>
+          `;
+          uidTbody.appendChild(tr);
+        });
+        stats();
+      }
+      async function removeExpiredUids() {
+        if (!currentUserId) return;
+        const expiredUids = uidList.filter(e => isExpired(e.expiryTs));
+        if (expiredUids.length === 0) return;
+        uidList = uidList.filter(e => !isExpired(e.expiryTs));
+        await saveUids();
+        renderTable();
+      }
+      function startTicker() {
+        clearInterval(tickTimer);
+        async function tick() {
+          await removeExpiredUids();
+          const rows = Array.from(uidTbody.querySelectorAll('tr'));
+          rows.forEach(row => {
+            const id = row.getAttribute('data-id');
+            const entry = uidList.find(e => e.id === id);
+            if (!entry) return;
+            const tds = row.querySelectorAll('td');
+            tds[3].textContent = fmtLeft(entry.expiryTs);
+            const statusCell = tds[4];
+            const text = isExpired(entry.expiryTs)
+              ? 'Expired'
+              : (entry.active ? 'Active' : 'Inactive');
+            statusCell.textContent = text;
+            statusCell.className =
+              'py-3 px-4 ' +
+              (isExpired(entry.expiryTs)
+                ? 'text-rose-300'
+                : (entry.active ? 'text-emerald-300' : 'text-slate-300'));
+          });
+          stats();
+        }
+        tick();
+        tickTimer = setInterval(tick, 1000);
+      }
+
+      uidTbody.addEventListener('click', async (e) => {
+        const tr = e.target.closest('tr');
+        if (!tr) return;
+        const id = tr.getAttribute('data-id');
+        const entry = uidList.find(x => x.id === id);
+        if (!entry) return;
+        if (e.target.classList.contains('rowToggle')) {
+          entry.active = !entry.active;
+          await saveUids();
+          renderTable();
+          return;
+        }
+        if (e.target.classList.contains('rowRemove')) {
+          uidList = uidList.filter(x => x.id !== id);
+          await saveUids();
+          renderTable();
+          return;
+        }
+        if (e.target.classList.contains('rowEdit')) {
+          uidField.value = entry.uid;
+          uidDisplayName.value = entry.displayName || '';
+          setExpiryControls(entry.expiryTs);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          return;
+        }
+      });
+
+      async function saveUids() {
+        if (!currentUserId) return;
+        const userRef = firebase.ref(db, `users/${currentUserId}`);
+        await firebase.update(userRef, {
+          displayName: displayName.value.trim(),
+          freemode: freemodeToggle.checked,
+          secret: secret, // Use existing secret, don't generate a new one
+          uids: uidList,
+          updatedAt: Date.now()
+        });
+      }
+
+      async function saveProfile() {
+        if (!currentUserId) return;
+
+        const userRef = firebase.ref(db, `users/${currentUserId}`);
+        const profileData = {
+          displayName: displayName.value.trim(),
+          freemode: freemodeToggle.checked,
+          secret: secret, // Use existing secret
+          uids: uidList,
+          updatedAt: Date.now()
+        };
+
+        await firebase.update(userRef, profileData);
+        profileSaved.classList.remove('hidden');
+        profileSaved.classList.remove('text-rose-400');
+        profileSaved.classList.add('text-emerald-400');
+        setTimeout(() => profileSaved.classList.add('hidden'), 1000);
+      }
+
+      function setExpiryControls(ts) {
+        if (!ts) {
+          expiryPeriod.value = 'lifetime';
+          expiryCount.value = '';
+          expiryCount.disabled = true;
+          return;
+        }
+        const diffMs = ts - Date.now();
+        if (diffMs <= 0) {
+          expiryPeriod.value = 'month';
+          expiryCount.value = 1;
+          expiryCount.disabled = false;
+          return;
+        }
+        const diffDays = diffMs / (24 * 60 * 60 * 1000);
+        let period = 'month';
+        let count = Math.round(diffDays / 30);
+        if (Math.abs(diffDays / 365 - Math.round(diffDays / 365)) < 0.01) {
+          period = 'year';
+          count = Math.round(diffDays / 365);
+        } else if (Math.abs(diffDays / 7 - Math.round(diffDays / 7)) < 0.01) {
+          period = 'week';
+          count = Math.round(diffDays / 7);
+        } else if (Math.abs(diffDays / 30 - Math.round(diffDays / 30)) < 0.01) {
+          period = 'month';
+          count = Math.round(diffDays / 30);
+        }
+        expiryPeriod.value = period;
+        expiryCount.value = count;
+        expiryCount.disabled = false;
+      }
+
+      addUidBtn.addEventListener('click', async () => {
+        const uid = uidField.value.trim();
+        const displayNameV = uidDisplayName.value.trim();
+        if (!uidValid(uid)) {
+          addUidBtn.textContent = 'Enter numbers only';
+          addUidBtn.classList.remove('bg-cyan-500', 'hover:bg-cyan-400', 'text-slate-900');
+          addUidBtn.classList.add('bg-rose-500/90', 'hover:bg-rose-500', 'text-white');
+          setTimeout(() => {
+            addUidBtn.textContent = 'Add / Update';
+            addUidBtn.classList.add('bg-cyan-500', 'hover:bg-cyan-400', 'text-slate-900');
+            addUidBtn.classList.remove('bg-rose-500/90', 'hover:bg-rose-500', 'text-white');
+          }, 1000);
+          return;
+        }
+        if (freemode) {
+          // Add to freeuids
+          const usersRef = firebase.ref(db, 'users');
+          const snapshot = await firebase.get(usersRef);
+          if (snapshot.exists()) {
+            const usersData = snapshot.val();
+            const user = usersData[currentUserId];
+            let freeuids = Array.isArray(user?.freeuids) ? user.freeuids : [];
+            if (freeuids.includes(uid)) {
+              addUidBtn.textContent = 'UID already added';
+              addUidBtn.classList.remove('bg-cyan-500', 'hover:bg-cyan-400', 'text-slate-900');
+              addUidBtn.classList.add('bg-rose-500/90', 'hover:bg-rose-500', 'text-white');
+              setTimeout(() => {
+                addUidBtn.textContent = 'Add / Update';
+                addUidBtn.classList.add('bg-cyan-500', 'hover:bg-cyan-400', 'text-slate-900');
+                addUidBtn.classList.remove('bg-rose-500/90', 'hover:bg-rose-500', 'text-white');
+              }, 1000);
+              return;
+            }
+            freeuids.push(uid);
+            const userRef = firebase.ref(db, `users/${currentUserId}`);
+            await firebase.update(userRef, { freeuids, updatedAt: Date.now() });
+            uidList = freeuids.map((uid, idx) => ({
+              id: 'free_' + idx,
+              uid: uid,
+              displayName: null,
+              active: true,
+              expiryTs: null
+            }));
+          }
+        } else {
+          // Add to normal uids
+          let ts = null;
+          const period = expiryPeriod.value;
+          if (period !== 'lifetime') {
+            const count = parseInt(expiryCount.value, 10) || 1;
+            let msPerUnit = 0;
+            if (period === 'year') msPerUnit = 365 * 24 * 60 * 60 * 1000;
+            else if (period === 'month') msPerUnit = 30 * 24 * 60 * 60 * 1000;
+            else if (period === 'week') msPerUnit = 7 * 24 * 60 * 60 * 1000;
+            ts = Date.now() + count * msPerUnit;
+          }
+          const existing = uidList.find(e => e.uid === uid);
+          if (existing) {
+            existing.expiryTs = ts;
+            existing.displayName = displayNameV || existing.displayName;
+            existing.active = existing.active ?? true;
+          } else {
+            const id = makeId();
+            uidList.unshift({
+              id,
+              uid,
+              displayName: displayNameV || null,
+              active: true,
+              expiryTs: ts
+            });
+          }
+          await saveUids();
+        }
+        uidField.value = '';
+        uidDisplayName.value = '';
+        expiryPeriod.value = 'month';
+        expiryCount.value = 1;
+        expiryCount.disabled = false;
+        renderTable();
+      });
+
+      searchInput.addEventListener('input', () => {
+        renderTable();
+      });
+
+      filterBtns.forEach(b => {
+        b.addEventListener('click', () => setFilter(b.dataset.filter));
+      });
+
+      saveProfileBtn.addEventListener('click', async () => {
+        const name = displayName.value.trim();
+        if (!name) {
+          profileSaved.textContent = 'Please enter a name';
+          profileSaved.classList.remove('hidden');
+          profileSaved.classList.add('text-rose-400');
+          setTimeout(() => {
+            profileSaved.classList.add('hidden');
+            profileSaved.classList.remove('text-rose-400');
+            profileSaved.textContent = 'Saved!';
+          }, 1000);
+          return;
+        }
+        if (!currentUserId) return;
+        await saveProfile();
+      });
+
+      freemodeToggle.addEventListener('change', async () => {
+        if (!currentUserId) return;
+        freemode = freemodeToggle.checked;
+        if (freemode) {
+          // Load freeuids from database
+          const usersRef = firebase.ref(db, 'users');
+          const snapshot = await firebase.get(usersRef);
+          if (snapshot.exists()) {
+            const usersData = snapshot.val();
+            const user = usersData[currentUserId];
+            const freeuids = Array.isArray(user?.freeuids) ? user.freeuids : [];
+            uidList = freeuids.map((uid, idx) => ({
+              id: 'free_' + idx,
+              uid: uid,
+              displayName: null,
+              active: true,
+              expiryTs: null
+            }));
+          } else {
+            uidList = [];
+          }
+        } else {
+          // Load normal uids from database
+          const usersRef = firebase.ref(db, 'users');
+          const snapshot = await firebase.get(usersRef);
+          if (snapshot.exists()) {
+            const usersData = snapshot.val();
+            const user = usersData[currentUserId];
+            const uids = Array.isArray(user?.uids) ? user.uids : [];
+            uidList = (uids || [])
+              .filter(u => u && typeof u === 'object' && 'uid' in u && 'id' in u && typeof u.uid === 'string' && uidValid(u.uid))
+              .map(u => ({
+                id: u.id || makeId(),
+                uid: u.uid,
+                displayName: u.displayName || null,
+                active: u.active ?? true,
+                expiryTs: u.expiryTs || null
+              }));
+          } else {
+            uidList = [];
+          }
+        }
+        renderTable();
+        await saveUids();
+      });
+
+      async function attemptSignIn(username, password, isAuto = false) {
+        if (!username || !password) {
+          if (!isAuto) {
+            loginHint.textContent = 'Please enter username and password';
+            loginHint.classList.remove('text-slate-400');
+            loginHint.classList.add('text-rose-400');
+          }
+          return false;
+        }
+
+        try {
+          const hashedPassword = await hashPassword(password);
+          const usersRef = firebase.ref(db, 'users');
+          const snapshot = await firebase.get(usersRef);
+
+          if (!snapshot.exists()) {
+            if (!isAuto) {
+              loginHint.textContent = 'Invalid username or password';
+              loginHint.classList.remove('text-slate-400');
+              loginHint.classList.add('text-rose-400');
+            }
+            return false;
+          }
+
+          const usersData = snapshot.val();
+          let foundUser = null;
+          let userId = null;
+
+          for (const [id, userData] of Object.entries(usersData)) {
+            if (userData.username === username && userData.password === hashedPassword) {
+              foundUser = userData;
+              userId = id;
+              break;
+            }
+          }
+
+          if (!foundUser) {
+            if (!isAuto) {
+              loginHint.textContent = 'Invalid username or password';
+              loginHint.classList.remove('text-slate-400');
+              loginHint.classList.add('text-rose-400');
+            }
+            return false;
+          }
+
+          currentUserId = userId;
+          currentUsername = username;
+          freemode = foundUser.freemode || false;
+
+          // Persistent secret: use existing or generate once
+          if (foundUser.secret) {
+            secret = foundUser.secret;
+          } else {
+            secret = generateSecret();
+            const userRef = firebase.ref(db, `users/${userId}`);
+            await firebase.update(userRef, { secret, updatedAt: Date.now() });
+          }
+
+          freemodeToggle.checked = freemode;
+          secretField.value = secret;
+          localStorage.setItem('authUsername', username);
+          localStorage.setItem('authPassword', password);
+
+          proceedToDashboard(
+            username,
+            foundUser.displayName || username,
+            foundUser.uids || [],
+            freemode,
+            foundUser.freeuids || []
+          );
+          return true;
+        } catch (error) {
+          console.error('Sign in error:', error);
+          if (!isAuto) {
+            loginHint.textContent = 'Sign in failed. Please try again.';
+            loginHint.classList.remove('text-slate-400');
+            loginHint.classList.add('text-rose-400');
+          }
+          return false;
+        }
+      }
+
+      function proceedToDashboard(username, userDisplayName, uids, isFreemode, freeuids) {
+        hide(loginPanel);
+        show(dashboardPanel);
+        show(signedBadge);
+        show(headerStatus);
+        updateHeaderStatus('Signed in as ' + username, 'text-emerald-300');
+        signedBadge.textContent = 'Signed in as ' + username;
+
+        displayName.value = userDisplayName;
+        secretField.value = secret; // ensure secret shows correctly
+        freemodeToggle.checked = isFreemode;
+
+        if (isFreemode && Array.isArray(freeuids)) {
+          uidList = freeuids.map((uid, idx) => ({
+            id: 'free_' + idx,
+            uid: uid,
+            displayName: null,
+            active: true,
+            expiryTs: null
+          }));
+        } else {
+          uidList = (uids || [])
+            .filter(u => u && typeof u === 'object' && 'uid' in u && 'id' in u && typeof u.uid === 'string' && uidValid(u.uid))
+            .map(u => ({
+              id: u.id || makeId(),
+              uid: u.uid,
+              displayName: u.displayName || null,
+              active: u.active ?? true,
+              expiryTs: u.expiryTs || null
+            }));
+        }
+
+        renderTable();
+        startTicker();
+      }
+
+      function generateSecret(length = 16) {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let result = '';
+        for (let i = 0; i < length; i++) {
+          result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+      }
+
+      signOutBtn.addEventListener('click', () => {
+        currentUserId = null;
+        currentUsername = '';
+        freemode = false;
+        secret = '';
+        show(loginPanel);
+        hide(dashboardPanel);
+        hide(signedBadge);
+        updateHeaderStatus('Not signed in');
+        headerStatus.classList.add('hidden');
+        sampleUsername.value = '';
+        samplePassword.value = '';
+        loginHint.textContent = 'Enter your credentials';
+        loginHint.classList.remove('text-rose-400');
+        loginHint.classList.add('text-slate-400');
+        clearInterval(tickTimer);
+        uidList = [];
+        searchInput.value = '';
+        localStorage.removeItem('authUsername');
+        localStorage.removeItem('authPassword');
+      });
+
+      expiryPeriod.addEventListener('change', () => {
+        if (expiryPeriod.value === 'lifetime') {
+          expiryCount.disabled = true;
+          expiryCount.value = '';
+        } else {
+          expiryCount.disabled = false;
+          if (!expiryCount.value) expiryCount.value = 1;
+        }
+      });
+
+      hide(headerStatus);
+      setFilter('all');
+      expiryPeriod.value = 'month';
+      expiryCount.value = 1;
+      expiryCount.disabled = false;
+
+      const storedUsername = localStorage.getItem('authUsername');
+      const storedPassword = localStorage.getItem('authPassword');
+      if (storedUsername && storedPassword) {
+        sampleUsername.value = storedUsername;
+        samplePassword.value = storedPassword;
+        attemptSignIn(storedUsername, storedPassword, true);
+      }
+
+      demoEnterBtn.addEventListener('click', async () => {
+        const username = sampleUsername.value.trim();
+        const password = samplePassword.value.trim();
+        await attemptSignIn(username, password);
+      });
+    });
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Exo:wght@400;500;600&display=swap');
+
+    body {
+      background:
+        radial-gradient(1200px 800px at 50% -10%, rgba(176, 40, 40, 0.3) 0%, rgba(176, 40, 40, 0) 50%),
+        radial-gradient(1000px 700px at 50% 20%, rgba(255, 82, 82, 0.2) 0%, rgba(255, 82, 82, 0) 50%),
+        linear-gradient(135deg, #b71c1c 0%, #8b0000 25%, #121212 50%, #000000 75%);
+      min-height: 100vh;
+      color: #ffffff;
+      font-family: 'Exo', sans-serif;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        radial-gradient(circle at 25% 25%, rgba(255, 82, 82, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 75% 75%, rgba(183, 28, 28, 0.05) 0%, transparent 50%),
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 82, 82, 0.03) 2px, rgba(255, 82, 82, 0.03) 4px);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    h1, h2, h3 {
+      font-family: 'Orbitron', monospace;
+    }
+
+    .glass {
+      background: rgba(18,18,18,.75);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 82, 82,.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+    }
+
+    .glow {
+      box-shadow: 0 10px 30px rgba(255,82,82,.2), inset 0 0 0 1px rgba(255,82,82,.1);
+      transition: all 0.3s ease;
+    }
+
+    .glow:hover {
+      box-shadow: 0 12px 50px rgba(255,82,82,.5), inset 0 0 0 1px rgba(255,82,82,.2);
+      transform: scale(1.03) translateY(-3px);
+      transition: all 0.3s ease;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #ff5252, #b71c1c);
+      color: #ffffff;
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      border: none;
+      transition: all 0.3s ease;
+      font-family: 'Exo', sans-serif;
+    }
+
+    .btn:hover {
+      background: linear-gradient(135deg, #ff7f7f, #d32f2f);
+      box-shadow: 0 0 20px rgba(255, 82, 82, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .btn:active {
+      transform: translateY(0px);
+    }
+
+    .input {
+      background: rgba(18,18,18,.8);
+      color: #ffffff;
+      border: 1px solid rgba(255,82,82,.25);
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+      transition: all 0.3s ease;
+    }
+
+    .input:focus {
+      outline: none;
+      border-color: rgba(255,82,82,.7);
+      box-shadow: 0 0 0 4px rgba(255,82,82,.15);
+    }
+
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,82,82,.25), transparent);
+    }
+
+    .pill {
+      border: 1px solid rgba(255,82,82,.25);
+      background: rgba(18,18,18,.6);
+    }
+
+    .countdown-pulse {
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .6; }
+    }
+
+    .hex-grid::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        radial-gradient(circle at 1px 1px, rgba(255,82,82,0.15) 1px, transparent 0);
+      background-size: 30px 30px;
+      opacity: 0.2;
+      pointer-events: none;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    .neural-network {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(ellipse at center, rgba(255,82,82,0.05) 0%, transparent 70%),
+        radial-gradient(ellipse at 20% 20%, rgba(183,28,28,0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 60%, rgba(183,28,28,0.02) 0%, transparent 50%);
+      animation: neuralPulse 4s ease-in-out infinite;
+    }
+
+    @keyframes neuralPulse {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 0.5; }
+    }
+
+    .particles {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .particle {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: rgba(255, 82, 82, 0.6);
+      border-radius: 50%;
+      animation: float 6s infinite linear;
+    }
+
+    @keyframes float {
+      from { transform: translateY(100vh); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      to { transform: translateY(-10vh); opacity: 0; }
+    }
+
+    #dashboardPanel {
+      width: 100%;
+      padding: 40px;
+      box-sizing: border-box;
+      position: center;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 32px;
+      width: 100%;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 20px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #8b0000;
+      transition: 0.4s;
+      border-radius: 20px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: #ffffff;
+      transition: 0.4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #ff5252;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    @media (max-width: 768px) {
+      #dashboardPanel {
+        padding: 20px;
+      }
+
+      .dashboard-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      .table-wrap {
+        font-size: 0.8rem;
+      }
+
+      .action-buttons {
+        flex-wrap: wrap;
+      }
+
+      .action-buttons button {
+        margin-bottom: 8px;
+      }
+
+      body::before {
+        background-size: 20px 20px;
+      }
+    }
+
+    #loginPanel {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotateX(0deg) rotateY(0deg);
+      transform-style: preserve-3d;
+      transition: transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      perspective: 1000px;
+    }
+
+    #loginPanel:hover {
+      transform: translate(-50%, -50%) scale(1.05);
+    }
+
+  </style>
+</head>
+<body class="antialiased selection:bg-red-500/30 selection:text-white" style="background-attachment: fixed;">
+  <div class="neural-network"></div>
+  <div id="particles" class="particles"></div>
+  <div class="container mx-auto px-4 py-8 hex-grid" style="min-height: 100vh;">
+    <header class="flex items-center justify-between mb-8">
+      <div class="flex items-center gap-3">
+        <div class="bg-gradient-to-tr from-red-600 to-red-400 flex items-center justify-center text-white font-bold text-lg shadow-lg glow">
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-red-400">TENZO UID AUTH</h1>
+          <p class="text-red-300 text-sm">UID Management System</p>
+        </div>
+        <div id="headerStatus" class="hidden md:flex items-center gap-2 badge text-xs px-3 py-1.5 rounded-full text-slate-100">
+          <span>Not signed in</span>
+        </div>
+      </div>
+    </header>
+
+
+   
+      <section id="loginPanel" class="glass glow rounded-2xl p-6 hex-grid">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h2 class="text-lg font-bold text-red-400">Login System</h2>
+            <p class="text-red-200 text-sm">Access your UID List!</p>
+          </div>
+        </div>
+        <div class="space-y-5">
+          <div>
+            <label class="block text-sm text-red-300 mb-1.5">Username</label>
+            <input id="sampleUsername" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" placeholder="Enter username" autocomplete="off">
+          </div>
+          <div>
+            <label class="block text-sm text-red-300 mb-1.5">Password</label>
+            <input id="samplePassword" type="password" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" placeholder="Enter password" autocomplete="off">
+          </div>
+          <div class="flex flex-wrap items-center gap-3 pt-2">
+            <button id="demoEnterBtn" class="btn bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-semibold px-5 py-2.5 rounded-xl">Sign In</button>
+            <div id="loginHint" class="text-xs text-red-400">Enter your credentials</div>
+          </div>
+        </div>
+      </section>
+      <section id="dashboardPanel" class="glass glow rounded-2xl hidden">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h2 class="text-xl font-bold text-red-400">Dashboard</h2>
+            <p class="text-red-200 text-sm">Manage display names and UID keys with expiry.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="signedBadge" class="hidden badge text-[11px] px-2.5 py-1 rounded-full text-white bg-gradient-to-r from-red-700 to-red-500 border border-red-400/50">Signed in</span>
+            <button id="signOutBtn" class="btn bg-gradient-to-r from-red-800 to-black text-white px-3 py-2 rounded-lg">Sign out</button>
+          </div>
+        </div>
+        <div class="dashboard-grid grid md:grid-cols-3 gap-6">
+          <div class="rounded-2xl border border-red-800/50 bg-black/40 p-6 md:col-span-1 glow">
+            <h3 class="font-bold text-lg mb-4 text-red-400">Profile</h3>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm text-red-300 mb-1.5">Display Name</label>
+                <input id="displayName" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" placeholder="e.g., Tenzo">
+              </div>
+              <div>
+                <label class="block text-sm text-red-300 mb-1.5">Secret</label>
+                <input id="secretField" type="text" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" readonly>
+              </div>
+              <div class="flex items-center gap-3">
+                <label class="block text-sm text-red-300">Free Mode</label>
+                <label class="toggle-switch">
+                  <input id="freemodeToggle" type="checkbox">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="flex items-center gap-3">
+                <button id="saveProfileBtn" class="btn bg-gradient-to-r from-red-600 to-red-500 text-white font-medium px-4 py-2.5 rounded-xl">Save Profile</button>
+                <span id="profileSaved" class="text-xs text-red-400 hidden">Saved!</span>
+              </div>
+            </div>
+            <div class="divider my-5"></div>
+            <div class="space-y-3">
+              <div class="pill rounded-xl px-3 py-2 text-xs flex items-center justify-between">
+                <span class="text-red-200">Total Uids</span>
+                <span id="statTotal" class="text-red-400 font-semibold">0</span>
+              </div>
+              <div class="pill rounded-xl px-3 py-2 text-xs flex items-center justify-between">
+                <span class="text-red-200">Active</span>
+                <span id="statActive" class="text-emerald-400 font-semibold">0</span>
+              </div>
+              <div class="pill rounded-xl px-3 py-2 text-xs flex items-center justify-between">
+                <span class="text-red-200">Expired</span>
+                <span id="statExpired" class="text-rose-400 font-semibold">0</span>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-2xl border border-red-800/50 bg-black/40 p-6 md:col-span-2 glow">
+            <h3 class="font-bold text-lg mb-4 text-red-400">UID Keys</h3>
+            <div class="grid md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label class="block text-sm text-red-300 mb-1.5">UID (numbers only)</label>
+                <input id="uidField" inputmode="numeric" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" placeholder="e.g., 13250951713">
+              </div>
+              <div>
+                <label class="block text-sm text-red-300 mb-1.5">Display Name</label>
+                <input id="uidDisplayName" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" placeholder="e.g., tenzo">
+                <label class="block text-sm text-red-300 mb-1.5 mt-3">Expiry</label>
+                <div class="flex gap-3">
+                  <select id="expiryPeriod" class="input w-full rounded-xl px-3 py-3 text-white">
+                    <option value="lifetime">Lifetime</option>
+                    <option value="year">Year(s)</option>
+                    <option value="month" selected>Month(s)</option>
+                    <option value="week">Week(s)</option>
+                  </select>
+                  <input id="expiryCount" type="number" min="1" class="input w-full rounded-xl px-3 py-3 text-white placeholder-red-400" placeholder="e.g. 1">
+                </div>
+                <button id="addUidBtn" class="btn bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold px-4 py-3 rounded-xl w-full mt-3">Add / Update</button>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <button data-filter="all" class="filterBtn btn bg-gradient-to-r from-red-800 to-black text-white px-3 py-2 rounded-lg text-sm">All</button>
+              <button data-filter="active" class="filterBtn btn bg-gradient-to-r from-red-800 to-black text-white px-3 py-2 rounded-lg text-sm">Active</button>
+              <button data-filter="expired" class="filterBtn btn bg-gradient-to-r from-red-800 to-black text-white px-3 py-2 rounded-lg text-sm">Expired</button>
+              <button data-filter="inactive" class="filterBtn btn bg-gradient-to-r from-red-800 to-black text-white px-3 py-2 rounded-lg text-sm">Inactive</button>
+              <input id="searchInput" class="input w-full md:w-auto flex-grow rounded-xl px-4 py-2 text-white placeholder-red-400" placeholder="Search by display name...">
+            </div>
+            <div class="table-wrap rounded-xl border border-red-800/50">
+              <table class="min-w-full text-sm">
+                <thead class="bg-red-900/40 text-red-200 sticky top-0">
+                  <tr>
+                    <th class="text-left py-3 px-4">UID</th>
+                    <th class="text-left py-3 px-4">Display Name</th>
+                    <th class="text-left py-3 px-4">Expiry</th>
+                    <th class="text-left py-3 px-4">Time Left</th>
+                    <th class="text-left py-3 px-4">Status</th>
+                    <th class="text-left py-3 px-4">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="uidTbody" class="divide-y divide-red-800/60"></tbody>
+              </table>
+            </div>
+            <div class="mt-4 flex items-center gap-3 action-buttons">
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+
+    </div>
+  </div>

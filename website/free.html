@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UID AUTH • Free Access</title>
+  <link href="https://unpkg.com/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Exo:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-database-compat.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Exo:wght@400;500;600&display=swap');
+
+    body {
+      background:
+        radial-gradient(1200px 800px at 50% -10%, rgba(176, 40, 40, 0.3) 0%, rgba(176, 40, 40, 0) 50%),
+        radial-gradient(1000px 700px at 50% 20%, rgba(255, 82, 82, 0.2) 0%, rgba(255, 82, 82, 0) 50%),
+        linear-gradient(135deg, #b71c1c 0%, #8b0000 25%, #121212 50%, #000000 75%);
+      min-height: 100vh;
+      color: #ffffff;
+      font-family: 'Exo', sans-serif;
+      position: relative;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        radial-gradient(circle at 25% 25%, rgba(255, 82, 82, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 75% 75%, rgba(183, 28, 28, 0.05) 0%, transparent 50%),
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255, 82, 82, 0.03) 2px, rgba(255, 82, 82, 0.03) 4px);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    h1, h2, h3 {
+      font-family: 'Orbitron', monospace;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .glass {
+      background: rgba(18,18,18,.75);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 82, 82,.2);
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+    }
+
+    .glow {
+      box-shadow: 0 10px 30px rgba(255,82,82,.2), inset 0 0 0 1px rgba(255,82,82,.1);
+      transition: all 0.3s ease;
+    }
+
+    .glow:hover {
+      box-shadow: 0 10px 40px rgba(255,82,82,.4), inset 0 0 0 1px rgba(255,82,82,.2);
+      transform: scale(1.02);
+    }
+
+    .btn {
+      background: linear-gradient(135deg, #ff5252, #b71c1c);
+      color: #ffffff;
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      border: none;
+      transition: all 0.3s ease;
+      font-family: 'Exo', sans-serif;
+    }
+
+    .btn:hover {
+      background: linear-gradient(135deg, #ff7f7f, #d32f2f);
+      box-shadow: 0 0 20px rgba(255, 82, 82, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .btn:active {
+      transform: translateY(0px);
+    }
+
+    .input {
+      background: rgba(18,18,18,.8);
+      color: #ffffff;
+      border: 1px solid rgba(255,82,82,.25);
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+      transition: all 0.3s ease;
+    }
+
+    .input:focus {
+      outline: none;
+      border-color: rgba(255,82,82,.7);
+      box-shadow: 0 0 0 4px rgba(255,82,82,.15);
+    }
+
+    .neural-network {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(ellipse at center, rgba(255,82,82,0.05) 0%, transparent 70%),
+        radial-gradient(ellipse at 20% 20%, rgba(183,28,28,0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 60%, rgba(183,28,28,0.02) 0%, transparent 50%);
+      animation: neuralPulse 4s ease-in-out infinite;
+    }
+
+    @keyframes neuralPulse {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body class="antialiased selection:bg-red-500/30 selection:text-white" style="background-attachment: fixed;">
+  <div class="neural-network"></div>
+  <div class="container mx-auto px-4 py-8">
+    <header class="flex items-center justify-between mb-8">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-red-600 to-red-400 flex items-center justify-center text-white font-bold text-lg shadow-lg glow">
+          AI
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-red-400">SG71 UID Bypass - Free Access</h1>
+          <p class="text-red-300 text-sm">Connect your UID to the SG71 Database</p>
+        </div>
+      </div>
+    </header>
+
+
+ 
+    <section class="glass glow rounded-2xl p-6">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-lg font-bold text-red-400">ADD UID HERE!</h2>
+          <p class="text-red-200 text-sm">Submit your UID for Whitelist.</p>
+        </div>
+      </div>
+      <div class="space-y-5">
+        <div>
+          <label class="block text-sm text-red-300 mb-1.5">UID (numbers only)</label>
+          <input id="uidField" inputmode="numeric" class="input w-full rounded-xl px-4 py-3 text-white placeholder-red-400" placeholder="e.g., 13250951713" autocomplete="off">
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button id="enterUidBtn" class="btn bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 text-white font-semibold px-5 py-2.5 rounded-xl">ADD UID TO DATABASE</button>
+          <span id="uidFeedback" class="text-xs text-red-400 hidden">UID Added!</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Circuit Board Animation -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+      <svg class="w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+        <defs>
+          <pattern id="circuit" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
+            <rect width="10" height="10" fill="none"/>
+            <line x1="0" y1="5" x2="10" y2="5" stroke="rgba(255,82,82,0.3)" stroke-width="0.5"/>
+            <line x1="5" y1="0" x2="5" y2="10" stroke="rgba(255,82,82,0.3)" stroke-width="0.5"/>
+            <circle cx="5" cy="5" r="0.5" fill="rgba(255,82,82,0.5)">
+              <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite"/>
+            </circle>
+          </pattern>
+        </defs>
+        <rect width="100" height="100" fill="url(#circuit)"/>
+      </svg>
+    </div>
+  </div>
+  <script type="module">
+    document.addEventListener('DOMContentLoaded', () => {
+    const firebaseConfig = {
+      apiKey: "",
+      authDomain: "",
+      databaseURL: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    };
+
+      const app = firebase.initializeApp(firebaseConfig);
+      const db = firebase.database();
+
+      const uidField = document.getElementById('uidField');
+      const enterUidBtn = document.getElementById('enterUidBtn');
+      const uidFeedback = document.getElementById('uidFeedback');
+      const HARDCODED_SECRET = 'VrZAsOrZWqB9D6Wa';
+
+      function uidValid(v) { return /^\d{5,}$/.test(v); }
+      function show(el) { el.classList.remove('hidden'); }
+      function hide(el) { el.classList.add('hidden'); }
+
+      // Check if secret exists and return user data
+      async function getUserBySecret(secret) {
+        try {
+          const usersRef = db.ref('users');
+          const snapshot = await usersRef.once('value');
+          if (!snapshot.exists()) return null;
+
+          const usersData = snapshot.val();
+          for (const [userId, user] of Object.entries(usersData)) {
+            if (user.secret === secret) {
+              return { userId, user };
+            }
+          }
+          return null;
+        } catch (error) {
+          console.error('Error checking secret:', error);
+          return null;
+        }
+      }
+
+      enterUidBtn.addEventListener('click', async () => {
+        const uid = uidField.value.trim();
+
+        if (!uid) {
+          uidFeedback.textContent = 'Please enter a UID';
+          uidFeedback.classList.remove('hidden', 'text-emerald-400');
+          uidFeedback.classList.add('text-rose-400');
+          setTimeout(() => {
+            uidFeedback.classList.add('hidden');
+            uidFeedback.classList.remove('text-rose-400');
+            uidFeedback.textContent = 'UID Added!';
+          }, 2000);
+          return;
+        }
+
+        if (!uidValid(uid)) {
+          uidFeedback.textContent = 'UID must be numbers only (min 5 digits)';
+          uidFeedback.classList.remove('hidden', 'text-emerald-400');
+          uidFeedback.classList.add('text-rose-400');
+          setTimeout(() => {
+            uidFeedback.classList.add('hidden');
+            uidFeedback.classList.remove('text-rose-400');
+            uidFeedback.textContent = 'UID Added!';
+          }, 2000);
+          return;
+        }
+
+        try {
+          // Validate hardcoded secret
+          const userData = await getUserBySecret(HARDCODED_SECRET);
+          if (!userData) {
+            uidFeedback.textContent = 'Invalid secret key';
+            uidFeedback.classList.remove('hidden', 'text-emerald-400');
+            uidFeedback.classList.add('text-rose-400');
+            setTimeout(() => {
+              uidFeedback.classList.add('hidden');
+              uidFeedback.classList.remove('text-rose-400');
+              uidFeedback.textContent = 'UID Added!';
+            }, 2000);
+            return;
+          }
+
+          const { userId, user } = userData;
+          const freeuids = Array.isArray(user.freeuids) ? user.freeuids : [];
+          const uids = Array.isArray(user.uids) ? user.uids : [];
+
+          // Check if UID already exists for this user
+          if (freeuids.includes(uid)) {
+            uidFeedback.textContent = 'UID already added for this user';
+            uidFeedback.classList.remove('hidden', 'text-emerald-400');
+            uidFeedback.classList.add('text-rose-400');
+            setTimeout(() => {
+              uidFeedback.classList.add('hidden');
+              uidFeedback.classList.remove('text-rose-400');
+              uidFeedback.textContent = 'UID Added!';
+            }, 2000);
+            return;
+          }
+
+          // Add UID to user's freeuids array
+          freeuids.push(uid);
+          // Also keep normalized UID entries for auth flows that read `uids`.
+          const existsInUids = uids.some(entry => {
+            if (!entry || typeof entry !== 'object') return false;
+            return String(entry.uid || '').trim() === uid;
+          });
+          if (!existsInUids) {
+            uids.push({
+              id: 'free_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+              uid,
+              displayName: 'free',
+              active: true,
+              expiryTs: null
+            });
+          }
+
+          const userRef = db.ref(`users/${userId}`);
+          await userRef.update({
+            freeuids,
+            uids,
+            updatedAt: Date.now()
+          });
+
+          uidField.value = '';
+          uidFeedback.classList.remove('hidden', 'text-rose-400');
+          uidFeedback.classList.add('text-emerald-400');
+          setTimeout(() => uidFeedback.classList.add('hidden'), 2000);
+        } catch (error) {
+          console.error('Error adding UID:', error);
+          uidFeedback.textContent = 'Error adding UID: ' + error.message;
+          uidFeedback.classList.remove('hidden', 'text-emerald-400');
+          uidFeedback.classList.add('text-rose-400');
+          setTimeout(() => {
+            uidFeedback.classList.add('hidden');
+            uidFeedback.classList.remove('text-rose-400');
+            uidFeedback.textContent = 'UID Added!';
+          }, 2000);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
